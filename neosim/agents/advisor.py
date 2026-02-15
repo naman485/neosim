@@ -227,11 +227,27 @@ Respond with a JSON object:
     def parse_response(self, response: str) -> AgentResponse:
         """Parse LLM response into structured format."""
         try:
-            json_match = re.search(r'\{[\s\S]*\}', response)
-            if json_match:
-                data = json.loads(json_match.group())
+            # Try to find JSON block - handle markdown code blocks
+            json_str = response
+
+            # Extract from markdown code block if present
+            code_block_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', response)
+            if code_block_match:
+                json_str = code_block_match.group(1)
             else:
-                data = json.loads(response)
+                # Find the outermost JSON object using bracket matching
+                json_str = self._extract_json_object(response)
+
+            data = json.loads(json_str)
+
+            # Extract recommendations safely
+            recommendations = data.get("strategic_recommendations", [])
+            rec_signals = []
+            for r in recommendations:
+                if isinstance(r, dict):
+                    rec_signals.append(f"recommendation:{r.get('action', '')}")
+                elif isinstance(r, str):
+                    rec_signals.append(f"recommendation:{r}")
 
             return AgentResponse(
                 decision=data.get("overall_assessment", "uncertain"),
@@ -241,23 +257,63 @@ Respond with a JSON object:
                     "key_metrics": data.get("key_metrics", {}),
                     "channel_ranking": data.get("channel_ranking", []),
                     "competitive_moat": data.get("key_metrics", {}).get("competitive_moat_strength", 5),
+                    "top_objections": data.get("top_objections", []),
                 },
                 signals=(
                     [f"blind_spot:{b}" for b in data.get("blind_spots", [])] +
                     [f"overconfidence:{o}" for o in data.get("overconfidence_flags", [])] +
-                    [f"recommendation:{r.get('action', '')}" for r in data.get("strategic_recommendations", [])] +
+                    rec_signals +
                     [f"risk:{data.get('biggest_risk', '')}"] +
                     [f"opportunity:{data.get('biggest_opportunity', '')}"]
                 ),
             )
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            # Try to extract what we can from the response
+            assessment = "uncertain"
+            for word in ["strong", "promising", "uncertain", "concerning", "weak"]:
+                if word in response.lower():
+                    assessment = word
+                    break
+
             return AgentResponse(
-                decision="uncertain",
-                reasoning=response[:300],
+                decision=assessment,
+                reasoning=f"Parse error: {str(e)[:100]}. Raw: {response[:200]}",
                 confidence=0.3,
                 metrics={},
                 signals=["parse_error"],
             )
+
+    def _extract_json_object(self, text: str) -> str:
+        """Extract the main JSON object from text using bracket matching."""
+        start = text.find('{')
+        if start == -1:
+            return text
+
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(text[start:], start):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i+1]
+
+        # If we couldn't find matching braces, return from start
+        return text[start:]
 
     def synthesize(
         self,
@@ -303,3 +359,64 @@ Respond with a JSON object:
         }
 
         return self.decide(full_context)
+
+    async def synthesize_async(
+        self,
+        context: Dict[str, Any],
+        buyer_results: List[AgentResponse],
+        competitor_results: List[AgentResponse],
+        channel_results: List[AgentResponse],
+    ) -> AgentResponse:
+        """Async version of synthesize for parallel execution."""
+        try:
+            full_context = {
+                **context,
+                "buyer_results": [
+                    {"decision": r.decision, "confidence": r.confidence,
+                     "metrics": r.metrics, "signals": r.signals}
+                    for r in buyer_results
+                ],
+                "competitor_results": [
+                    {"decision": r.decision, "confidence": r.confidence,
+                     "metrics": r.metrics, "signals": r.signals}
+                    for r in competitor_results
+                ],
+                "channel_results": [
+                    {"decision": r.decision, "confidence": r.confidence,
+                     "metrics": r.metrics, "signals": r.signals,
+                     "channel": context.get("channels", [{}])[i].get("name", f"channel_{i}")
+                     if i < len(context.get("channels", [])) else f"channel_{i}"}
+                    for i, r in enumerate(channel_results)
+                ],
+            }
+            return await self.decide_async(full_context)
+        except Exception as e:
+            import sys
+            print(f"[Advisor Error] {type(e).__name__}: {str(e)[:100]}", file=sys.stderr)
+
+            # Fallback: synthesize from available data without LLM
+            buy_decisions = [r.decision for r in buyer_results]
+            buy_rate = buy_decisions.count("BUY") / len(buy_decisions) if buy_decisions else 0
+
+            # Determine assessment from conversion rate
+            if buy_rate >= 0.15:
+                assessment = "strong"
+            elif buy_rate >= 0.08:
+                assessment = "promising"
+            elif buy_rate >= 0.03:
+                assessment = "uncertain"
+            else:
+                assessment = "concerning"
+
+            return AgentResponse(
+                decision=assessment,
+                reasoning=f"Fallback synthesis (LLM error: {str(e)[:50]}). "
+                          f"Conversion: {buy_rate:.1%}, {len(buyer_results)} buyers evaluated.",
+                confidence=0.4,
+                metrics={
+                    "fallback": True,
+                    "conversion_rate": buy_rate,
+                    "error_type": type(e).__name__,
+                },
+                signals=[f"risk:LLM synthesis failed - using fallback logic"],
+            )

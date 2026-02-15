@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 import json
 import os
 import httpx
+import asyncio
 from enum import Enum
 
 
@@ -87,6 +88,7 @@ class BaseAgent(ABC):
         # API configuration
         self._api_key = self._get_api_key()
         self._client = httpx.Client(timeout=30.0)
+        self._async_client = None  # Lazy init for async
 
     def _default_model(self) -> str:
         """Get default model for provider."""
@@ -180,6 +182,24 @@ class BaseAgent(ABC):
 
         return response
 
+    async def decide_async(self, context: Dict[str, Any]) -> AgentResponse:
+        """Async version of decide for parallel execution."""
+        system_prompt = self.get_persona_prompt()
+        user_prompt = self.get_decision_prompt(context)
+        memory_context = self.memory.get_context()
+        user_prompt = f"{user_prompt}\n\n## Your Recent Memory\n{memory_context}"
+
+        raw_response = await self._call_llm_async(system_prompt, user_prompt)
+        response = self.parse_response(raw_response)
+        response.raw_response = raw_response
+
+        self.memory.add({
+            "cycle": context.get("cycle", 0),
+            "decision": response.decision,
+            "key_metrics": response.metrics,
+        })
+        return response
+
     def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
         """
         Call the LLM API.
@@ -252,6 +272,61 @@ class BaseAgent(ABC):
             "metrics": {},
             "signals": ["mock_signal"],
         })
+
+    async def _call_llm_async(self, system_prompt: str, user_prompt: str) -> str:
+        """Async LLM API call for parallel execution."""
+        if not self._api_key:
+            return self._mock_response()
+
+        # Create a fresh client for each call to avoid connection issues in parallel
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            if self.provider == LLMProvider.ANTHROPIC:
+                return await self._call_anthropic_async(system_prompt, user_prompt, client)
+            else:
+                return await self._call_openai_async(system_prompt, user_prompt, client)
+
+    async def _call_anthropic_async(self, system_prompt: str, user_prompt: str, client: httpx.AsyncClient) -> str:
+        """Async Anthropic API call."""
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": self._api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "max_tokens": 1024,
+                "temperature": self.temperature,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["content"][0]["text"]
+
+    async def _call_openai_async(self, system_prompt: str, user_prompt: str, client: httpx.AsyncClient) -> str:
+        """Async OpenAI API call."""
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
 
     def reset(self) -> None:
         """Reset agent state for new simulation."""

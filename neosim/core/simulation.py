@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
 import time
 import uuid
+import asyncio
 
 from .config import NeoSimConfig, _config_to_dict
 from .metrics import MetricsAggregator, SimulationMetrics
@@ -192,11 +193,19 @@ class Simulation:
             total_duration_seconds=duration,
         )
 
-        # Populate summary from last advisor response
+        # Populate summary from last advisor response or compute from metrics
         if cycles and cycles[-1].advisor_response:
             advisor = cycles[-1].advisor_response
-            result.overall_assessment = advisor.decision
-            result.confidence_score = advisor.confidence
+
+            # If advisor succeeded, use its assessment
+            if advisor.decision not in ["ERROR", "MOCK_DECISION"]:
+                result.overall_assessment = advisor.decision
+                result.confidence_score = advisor.confidence
+            else:
+                # Fallback: compute from metrics
+                result.overall_assessment = self._compute_assessment(final_metrics)
+                result.confidence_score = final_metrics.overall_confidence
+
             result.top_recommendations = [
                 s.replace("recommendation:", "")
                 for s in advisor.signals if s.startswith("recommendation:")
@@ -205,8 +214,32 @@ class Simulation:
                 s.replace("risk:", "")
                 for s in advisor.signals if s.startswith("risk:")
             ][:3]
+        else:
+            # No advisor response - compute from metrics
+            result.overall_assessment = self._compute_assessment(final_metrics)
+            result.confidence_score = final_metrics.overall_confidence
 
         return result
+
+    def _compute_assessment(self, metrics) -> str:
+        """Compute overall assessment from metrics when advisor fails."""
+        conv_rate = metrics.conversion_rate.mid if hasattr(metrics.conversion_rate, 'mid') else 0
+        threat = metrics.competitive_threat_score
+        readiness = metrics.market_readiness_score
+
+        # Score based on conversion, threat, and readiness
+        score = (conv_rate * 100) * 0.5 + (10 - threat) * 0.3 + readiness * 0.2
+
+        if score >= 12:
+            return "strong"
+        elif score >= 8:
+            return "promising"
+        elif score >= 4:
+            return "uncertain"
+        elif score >= 2:
+            return "concerning"
+        else:
+            return "weak"
 
     def _build_base_context(self) -> Dict[str, Any]:
         """Build base context dict from config."""
@@ -247,64 +280,74 @@ class Simulation:
         }
 
     def _run_cycle(self, cycle_num: int, base_context: Dict[str, Any]) -> CycleResult:
-        """Run a single simulation cycle."""
+        """Run a single simulation cycle with parallel agent execution."""
+        return asyncio.run(self._run_cycle_async(cycle_num, base_context))
+
+    async def _run_cycle_async(self, cycle_num: int, base_context: Dict[str, Any]) -> CycleResult:
+        """Async cycle execution - runs agents in parallel with rate limiting."""
         context = {**base_context, "cycle": cycle_num}
 
-        # Run buyer agents
-        buyer_responses = []
+        # Semaphore to limit concurrent API calls (avoid 429 rate limits)
+        semaphore = asyncio.Semaphore(5)  # Max 5 concurrent requests (conservative)
+
+        async def safe_decide(agent):
+            async with semaphore:
+                try:
+                    return await agent.decide_async(context)
+                except Exception as e:
+                    return AgentResponse(
+                        decision="ERROR",
+                        reasoning=str(e),
+                        confidence=0.0,
+                    )
+
+        # Gather all agent tasks
+        all_tasks = []
+        buyer_count = len(self.buyer_agents)
+        competitor_count = len(self.competitor_agents)
+        channel_count = len(self.channel_agents)
+
         for agent in self.buyer_agents:
-            try:
-                response = agent.decide(context)
-                buyer_responses.append(response)
-            except Exception as e:
-                # Log error but continue
-                buyer_responses.append(AgentResponse(
-                    decision="ERROR",
-                    reasoning=str(e),
-                    confidence=0.0,
-                ))
-
-        # Run competitor agents
-        competitor_responses = []
+            all_tasks.append(safe_decide(agent))
         for agent in self.competitor_agents:
-            try:
-                response = agent.decide(context)
-                competitor_responses.append(response)
-            except Exception as e:
-                competitor_responses.append(AgentResponse(
-                    decision="ERROR",
-                    reasoning=str(e),
-                    confidence=0.0,
-                ))
-
-        # Run channel agents
-        channel_responses = []
+            all_tasks.append(safe_decide(agent))
         for agent in self.channel_agents:
+            all_tasks.append(safe_decide(agent))
+
+        # Execute with rate limiting
+        all_responses = await asyncio.gather(*all_tasks)
+
+        # Split responses back
+        buyer_responses = list(all_responses[:buyer_count])
+        competitor_responses = list(all_responses[buyer_count:buyer_count + competitor_count])
+        channel_responses = list(all_responses[buyer_count + competitor_count:])
+
+        # Run advisor synthesis with retry logic for rate limits
+        advisor_response = None
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                response = agent.decide(context)
-                channel_responses.append(response)
+                # Exponential backoff delay
+                if attempt > 0:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    await asyncio.sleep(1)  # Initial delay after parallel calls
+
+                advisor_response = await self.advisor_agent.synthesize_async(
+                    context,
+                    buyer_responses,
+                    competitor_responses,
+                    channel_responses,
+                )
+                break  # Success
             except Exception as e:
-                channel_responses.append(AgentResponse(
+                if "429" in str(e) and attempt < max_retries - 1:
+                    continue  # Retry on rate limit
+                advisor_response = AgentResponse(
                     decision="ERROR",
                     reasoning=str(e),
                     confidence=0.0,
-                ))
-
-        # Run advisor synthesis
-        advisor_response = None
-        try:
-            advisor_response = self.advisor_agent.synthesize(
-                context,
-                buyer_responses,
-                competitor_responses,
-                channel_responses,
-            )
-        except Exception as e:
-            advisor_response = AgentResponse(
-                decision="ERROR",
-                reasoning=str(e),
-                confidence=0.0,
-            )
+                )
 
         # Compute cycle metrics
         cycle_metrics = self._compute_cycle_metrics(
