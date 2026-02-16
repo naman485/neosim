@@ -172,8 +172,8 @@ class Simulation:
             cycle_result = self._run_cycle(cycle_num, base_context)
             cycles.append(cycle_result)
 
-            # Update metrics aggregator
-            self.metrics_aggregator.add_cycle(cycle_result)
+            # Update metrics aggregator with buyer agents for ICP tracking
+            self.metrics_aggregator.add_cycle(cycle_result, self.buyer_agents)
 
             # Callback for progress reporting
             if self.on_cycle_complete:

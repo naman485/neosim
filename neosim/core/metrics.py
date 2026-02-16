@@ -48,6 +48,44 @@ class ChannelRanking:
 
 
 @dataclass
+class ICPMetrics:
+    """Per-ICP persona metrics."""
+    name: str
+    role: str
+    company_size: str
+    budget_range: str
+    pain_points: List[str]
+    goals: List[str]
+
+    # Computed metrics
+    total_responses: int = 0
+    buy_count: int = 0
+    pass_count: int = 0
+    object_count: int = 0
+    conversion_rate: float = 0.0
+    avg_confidence: float = 0.0
+    objections_raised: List[str] = field(default_factory=list)
+    top_objections: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "role": self.role,
+            "company_size": self.company_size,
+            "budget_range": self.budget_range,
+            "pain_points": self.pain_points,
+            "goals": self.goals,
+            "total_responses": self.total_responses,
+            "buy_count": self.buy_count,
+            "pass_count": self.pass_count,
+            "object_count": self.object_count,
+            "conversion_rate": round(self.conversion_rate, 3),
+            "avg_confidence": round(self.avg_confidence, 2),
+            "top_objections": self.top_objections[:5],
+        }
+
+
+@dataclass
 class SimulationMetrics:
     """Complete metrics output from a simulation."""
     # Core projected metrics
@@ -65,8 +103,11 @@ class SimulationMetrics:
     objection_clusters: List[ObjectionCluster]
     channel_rankings: List[ChannelRanking]
 
+    # ICP persona metrics
+    icp_metrics: List[ICPMetrics] = field(default_factory=list)
+
     # Raw data
-    cycle_metrics: List[Dict[str, Any]]
+    cycle_metrics: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -98,6 +139,7 @@ class SimulationMetrics:
                 }
                 for c in self.channel_rankings
             ],
+            "icp_metrics": [icp.to_dict() for icp in self.icp_metrics],
         }
 
 
@@ -113,22 +155,57 @@ class MetricsAggregator:
         self.cycle_metrics: List[Dict[str, Any]] = []
         self.all_objections: List[str] = []
         self.channel_data: Dict[str, List[Dict]] = {}
+        self.icp_data: Dict[str, Dict[str, Any]] = {}  # Per-ICP tracking
 
-    def add_cycle(self, cycle_result) -> None:
+    def add_cycle(self, cycle_result, buyer_agents=None) -> None:
         """
         Add cycle results to aggregation.
 
         Args:
             cycle_result: CycleResult from simulation
+            buyer_agents: List of BuyerAgent instances (for persona info)
         """
         # Store cycle metrics
         self.cycle_metrics.append(cycle_result.metrics)
 
-        # Extract objections from buyer responses
-        for response in cycle_result.buyer_responses:
+        # Extract objections and track per-ICP metrics
+        for i, response in enumerate(cycle_result.buyer_responses):
+            # Get persona info if available
+            persona_name = "Unknown"
+            persona_info = {}
+            if buyer_agents and i < len(buyer_agents):
+                agent = buyer_agents[i]
+                if hasattr(agent, 'persona'):
+                    persona = agent.persona
+                    persona_name = persona.name
+                    persona_info = {
+                        "role": persona.role,
+                        "company_size": persona.company_size,
+                        "budget_range": persona.budget_range,
+                        "pain_points": persona.pain_points,
+                        "goals": persona.goals,
+                    }
+
+            # Initialize ICP tracking if needed
+            if persona_name not in self.icp_data:
+                self.icp_data[persona_name] = {
+                    "info": persona_info,
+                    "responses": [],
+                    "objections": [],
+                }
+
+            # Track response
+            self.icp_data[persona_name]["responses"].append({
+                "decision": response.decision,
+                "confidence": response.confidence,
+            })
+
+            # Extract objections
             for signal in response.signals:
                 if signal.startswith("objection:"):
-                    self.all_objections.append(signal.replace("objection:", ""))
+                    objection = signal.replace("objection:", "")
+                    self.all_objections.append(objection)
+                    self.icp_data[persona_name]["objections"].append(objection)
 
         # Aggregate channel data
         for i, response in enumerate(cycle_result.channel_responses):
@@ -196,6 +273,9 @@ class MetricsAggregator:
         # Rank channels
         channel_rankings = self._rank_channels()
 
+        # Compute ICP metrics
+        icp_metrics = self._compute_icp_metrics()
+
         # Overall confidence
         overall_confidence = self._compute_overall_confidence()
 
@@ -209,6 +289,7 @@ class MetricsAggregator:
             overall_confidence=overall_confidence,
             objection_clusters=objection_clusters,
             channel_rankings=channel_rankings,
+            icp_metrics=icp_metrics,
             cycle_metrics=self.cycle_metrics,
         )
 
@@ -292,6 +373,63 @@ class MetricsAggregator:
             "other": "Gather more specific feedback to address this objection type.",
         }
         return counters.get(theme.lower(), counters["other"])
+
+    def _compute_icp_metrics(self) -> List[ICPMetrics]:
+        """Compute per-ICP persona metrics."""
+        results = []
+
+        for persona_name, data in self.icp_data.items():
+            responses = data.get("responses", [])
+            objections = data.get("objections", [])
+            info = data.get("info", {})
+
+            if not responses:
+                continue
+
+            buy_count = sum(1 for r in responses if r["decision"] == "BUY")
+            pass_count = sum(1 for r in responses if r["decision"] == "PASS")
+            object_count = sum(1 for r in responses if r["decision"] == "OBJECT")
+            total = len(responses)
+
+            # Compute conversion rate
+            conversion_rate = buy_count / total if total > 0 else 0
+
+            # Average confidence
+            avg_confidence = (
+                sum(r["confidence"] for r in responses) / total
+                if total > 0 else 0
+            )
+
+            # Find top objections for this persona
+            objection_counts: Dict[str, int] = {}
+            for obj in objections:
+                objection_counts[obj] = objection_counts.get(obj, 0) + 1
+            top_objections = sorted(
+                objection_counts.keys(),
+                key=lambda x: objection_counts[x],
+                reverse=True
+            )[:5]
+
+            results.append(ICPMetrics(
+                name=persona_name,
+                role=info.get("role", "Unknown"),
+                company_size=info.get("company_size", "Unknown"),
+                budget_range=info.get("budget_range", "Unknown"),
+                pain_points=info.get("pain_points", []),
+                goals=info.get("goals", []),
+                total_responses=total,
+                buy_count=buy_count,
+                pass_count=pass_count,
+                object_count=object_count,
+                conversion_rate=conversion_rate,
+                avg_confidence=avg_confidence,
+                objections_raised=objections,
+                top_objections=top_objections,
+            ))
+
+        # Sort by conversion rate descending
+        results.sort(key=lambda x: x.conversion_rate, reverse=True)
+        return results
 
     def _rank_channels(self) -> List[ChannelRanking]:
         """Rank channels by projected performance."""
