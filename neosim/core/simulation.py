@@ -68,6 +68,7 @@ class Simulation:
         config: NeoSimConfig,
         provider: LLMProvider = LLMProvider.ANTHROPIC,
         on_cycle_complete: Optional[Callable[[int, CycleResult], None]] = None,
+        execution_quality=None,
     ):
         """
         Initialize simulation.
@@ -76,10 +77,12 @@ class Simulation:
             config: NeoSim configuration
             provider: LLM provider to use
             on_cycle_complete: Callback after each cycle (for progress reporting)
+            execution_quality: Optional ExecutionQualityScore from web analysis
         """
         self.config = config
         self.provider = provider
         self.on_cycle_complete = on_cycle_complete
+        self.execution_quality = execution_quality
 
         self.sim_id = str(uuid.uuid4())[:8]
         self.metrics_aggregator = MetricsAggregator()

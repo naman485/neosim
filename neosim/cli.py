@@ -259,12 +259,30 @@ def sim(
         "--verbose", "-v",
         help="Show detailed output",
     ),
+    url: Optional[str] = typer.Option(
+        None,
+        "--url",
+        help="Landing page URL to analyze for execution quality",
+    ),
+    docs_url: Optional[str] = typer.Option(
+        None,
+        "--docs",
+        help="API documentation URL to analyze",
+    ),
+    mcp_url: Optional[str] = typer.Option(
+        None,
+        "--mcp",
+        help="MCP tool definition URL to analyze",
+    ),
 ):
     """
     Run a GTM simulation.
 
     Deploys AI agents to simulate buyer behavior, competitor responses,
     and channel performance for your configured strategy.
+
+    Use --url to analyze your landing page and adjust conversion predictions
+    based on execution quality (not just positioning).
     """
     # Check API key
     if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
@@ -291,6 +309,30 @@ def sim(
     # Override cycles if specified
     if cycles:
         config.simulation.cycles = cycles
+
+    # Analyze execution quality if URLs provided
+    execution_quality = None
+    if url or docs_url or mcp_url:
+        from .core.web_analyzer import WebAnalyzer
+        console.print("\n[bold]Analyzing Execution Quality...[/bold]")
+
+        analyzer = WebAnalyzer()
+
+        if url:
+            console.print(f"  Analyzing landing page: {url}")
+        if docs_url:
+            console.print(f"  Analyzing API docs: {docs_url}")
+        if mcp_url:
+            console.print(f"  Analyzing MCP tools: {mcp_url}")
+
+        execution_quality = analyzer.analyze_all(
+            landing_url=url,
+            docs_url=docs_url,
+            mcp_url=mcp_url,
+        )
+
+        # Display execution quality results
+        _display_execution_quality(execution_quality)
 
     # Display header
     console.print(Panel.fit(
@@ -332,15 +374,16 @@ def sim(
             config,
             provider=provider,
             on_cycle_complete=progress_callback,
+            execution_quality=execution_quality,
         )
         result = simulation.run()
 
     # Display results
-    _display_final_results(result)
+    _display_final_results(result, execution_quality)
 
     # Save if requested
     if output:
-        _save_results(result, output)
+        _save_results(result, output, execution_quality)
         console.print(f"\n[green]Results saved to {output}[/green]")
 
 
@@ -353,7 +396,59 @@ def _display_cycle_result(cycle_num: int, result):
                   f"Threat: {metrics.get('avg_competitor_threat', 0):.1f}/10")
 
 
-def _display_final_results(result: SimulationResult):
+def _display_execution_quality(eq):
+    """Display execution quality analysis results."""
+    from .core.web_analyzer import ExecutionQualityScore
+
+    console.print("\n")
+    score_color = "green" if eq.overall_score >= 7 else "yellow" if eq.overall_score >= 5 else "red"
+    console.print(Panel.fit(
+        f"[bold]Execution Quality Score:[/bold] [{score_color}]{eq.overall_score:.1f}/10[/{score_color}]",
+        subtitle=f"Conversion Multiplier: {eq.conversion_multiplier:.2f}x",
+    ))
+
+    if eq.landing_page:
+        lp = eq.landing_page
+        console.print(f"\n[bold]Landing Page Analysis[/bold] ({lp.url})")
+        console.print(f"  Score: {lp.score:.1f}/10")
+
+        if lp.strengths:
+            console.print("  [green]Strengths:[/green]")
+            for s in lp.strengths[:3]:
+                console.print(f"    + {s}")
+
+        if lp.weaknesses:
+            console.print("  [red]Weaknesses:[/red]")
+            for w in lp.weaknesses[:3]:
+                console.print(f"    - {w}")
+
+        if lp.recommendations:
+            console.print("  [cyan]Recommendations:[/cyan]")
+            for r in lp.recommendations[:3]:
+                console.print(f"    → {r}")
+
+    if eq.api_docs:
+        docs = eq.api_docs
+        console.print(f"\n[bold]API Docs Analysis[/bold] ({docs.url})")
+        console.print(f"  Score: {docs.score:.1f}/10")
+        if docs.weaknesses:
+            for w in docs.weaknesses[:2]:
+                console.print(f"    - {w}")
+
+    if eq.mcp:
+        mcp = eq.mcp
+        console.print(f"\n[bold]MCP Analysis[/bold] ({mcp.tool_definition_url})")
+        console.print(f"  Score: {mcp.score:.1f}/10")
+        if mcp.tools_found:
+            console.print(f"  Tools: {', '.join(mcp.tools_found[:5])}")
+        if mcp.issues:
+            for issue in mcp.issues[:2]:
+                console.print(f"    - {issue}")
+
+    console.print("")
+
+
+def _display_final_results(result: SimulationResult, execution_quality=None):
     """Display final simulation results."""
     console.print("\n")
     console.print(Panel.fit(
@@ -389,11 +484,24 @@ def _display_final_results(result: SimulationResult):
         f"${metrics.cac.high:.0f}",
         metrics.cac.confidence,
     )
+    # Show adjusted conversion if execution quality was analyzed
+    conv_low = metrics.conversion_rate.low
+    conv_mid = metrics.conversion_rate.mid
+    conv_high = metrics.conversion_rate.high
+    conv_label = "Conversion Rate"
+
+    if execution_quality:
+        multiplier = execution_quality.conversion_multiplier
+        conv_low *= multiplier
+        conv_mid *= multiplier
+        conv_high *= multiplier
+        conv_label = f"Conversion (adj {multiplier:.1f}x)"
+
     table.add_row(
-        "Conversion Rate",
-        f"{metrics.conversion_rate.low:.1%}",
-        f"{metrics.conversion_rate.mid:.1%}",
-        f"{metrics.conversion_rate.high:.1%}",
+        conv_label,
+        f"{conv_low:.1%}",
+        f"{conv_mid:.1%}",
+        f"{conv_high:.1%}",
         metrics.conversion_rate.confidence,
     )
     table.add_row(
@@ -431,7 +539,7 @@ def _display_final_results(result: SimulationResult):
             console.print(f"  - {risk}")
 
 
-def _save_results(result: SimulationResult, path: Path):
+def _save_results(result: SimulationResult, path: Path, execution_quality=None):
     """Save simulation results to JSON."""
     import json
 
@@ -446,6 +554,22 @@ def _save_results(result: SimulationResult, path: Path):
         "recommendations": result.top_recommendations,
         "risks": result.top_risks,
     }
+
+    # Add execution quality if analyzed
+    if execution_quality:
+        data["execution_quality"] = execution_quality.to_dict()
+
+        # Add adjusted conversion metrics
+        multiplier = execution_quality.conversion_multiplier
+        metrics = result.final_metrics
+        data["adjusted_metrics"] = {
+            "conversion_rate": {
+                "low": metrics.conversion_rate.low * multiplier,
+                "mid": metrics.conversion_rate.mid * multiplier,
+                "high": metrics.conversion_rate.high * multiplier,
+                "multiplier": multiplier,
+            }
+        }
 
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
