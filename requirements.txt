@@ -1,0 +1,7 @@
+# NeoSim API Dependencies
+typer>=0.9.0
+rich>=13.0.0
+httpx>=0.25.0
+pyyaml>=6.0
+fastapi>=0.109.0
+uvicorn>=0.27.0
