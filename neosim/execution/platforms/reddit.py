@@ -5,6 +5,19 @@ Generates:
 - Launch posts (authentic, value-first)
 - Value posts for sustained engagement
 - Comment strategy and rules
+- Karma-building strategy
+
+Platform Best Practices (2024):
+- AUTHENTICITY IS EVERYTHING (Redditors detect marketing instantly)
+- NO self-promotion until you have karma and history
+- Value-first: Give 10x before asking for anything
+- Each subreddit has DIFFERENT rules - read them
+- Title is 80% of success
+- Best times: US morning weekdays (9-11am EST)
+- Respond to every comment (builds trust)
+- Use "I" not "we" (personal voice wins)
+- Flair requirements vary by subreddit
+- Karma threshold: 100+ comment karma before posting in most subs
 """
 
 from typing import List
@@ -13,32 +26,90 @@ from ..distribution import RedditContent
 
 
 class RedditGenerator(BasePlatformGenerator):
-    """Generate Reddit content."""
+    """Generate Reddit content following community best practices."""
 
     # Reddit-specific settings
     MAX_TITLE_LENGTH = 300
     MAX_POST_LENGTH = 40000  # Self-posts
 
-    # Subreddit targeting by category
+    # Optimal posting times (US-centric, most traffic)
+    OPTIMAL_TIMES = ["9:00am EST", "10:00am EST", "2:00pm EST"]
+    BEST_DAYS = ["monday", "tuesday", "wednesday", "saturday"]
+
+    # Subreddit targeting by category with rules
     SUBREDDIT_MAP = {
         "SaaS": ["SaaS", "startups", "Entrepreneur", "smallbusiness", "indiehackers"],
-        "DevTool": ["programming", "webdev", "devops", "coding", "learnprogramming"],
+        "DevTool": ["programming", "webdev", "devops", "SideProject", "coolgithubprojects"],
         "Consumer": ["ProductManagement", "startups", "Entrepreneur"],
         "Marketplace": ["startups", "Entrepreneur", "smallbusiness"],
-        "API": ["programming", "webdev", "devops", "API_Design"],
+        "API": ["programming", "webdev", "devops", "coding"],
     }
 
-    # Content rules by subreddit type
+    # Detailed subreddit rules (these are CRITICAL)
     SUBREDDIT_RULES = {
-        "startups": ["No direct links", "Add value first", "Follow Show & Tell format"],
-        "SaaS": ["Tag with [Tool]", "Include pricing transparency", "Respond to all comments"],
-        "indiehackers": ["Share journey", "Include revenue if possible", "Be authentic"],
-        "programming": ["Technical focus only", "No self-promotion in title", "Code examples welcome"],
+        "startups": {
+            "rules": [
+                "Use 'Show & Tell' or 'SaaS' flair ONLY",
+                "Self-post required (no direct links)",
+                "Include: problem, solution, traction, ask",
+                "NO asking for upvotes",
+                "Respond to every comment",
+            ],
+            "karma_required": 0,
+            "self_promo_allowed": True,
+            "format": "show_and_tell",
+        },
+        "SaaS": {
+            "rules": [
+                "Tag post with [Tool] or relevant flair",
+                "Include pricing transparency",
+                "Share real metrics if possible",
+                "Self-promotion OK in designated threads",
+            ],
+            "karma_required": 10,
+            "self_promo_allowed": True,
+            "format": "standard",
+        },
+        "indiehackers": {
+            "rules": [
+                "Share your journey, not just the product",
+                "Include revenue/metrics if comfortable",
+                "Be authentic about struggles",
+                "Cross-posting from indiehackers.com welcome",
+            ],
+            "karma_required": 0,
+            "self_promo_allowed": True,
+            "format": "journey",
+        },
+        "programming": {
+            "rules": [
+                "NO self-promotion (will get removed)",
+                "Technical content only",
+                "Code examples required for discussions",
+                "Read sidebar rules carefully",
+            ],
+            "karma_required": 100,
+            "self_promo_allowed": False,
+            "format": "technical",
+        },
+        "webdev": {
+            "rules": [
+                "Self-promo only in Showoff Saturday thread",
+                "Technical discussions welcome anytime",
+                "Include tech stack details",
+            ],
+            "karma_required": 50,
+            "self_promo_allowed": "saturday_only",
+            "format": "technical",
+        },
     }
 
     def generate(self) -> List[RedditContent]:
-        """Generate all Reddit content."""
+        """Generate all Reddit content with karma-building strategy."""
         content = []
+
+        # FIRST: Karma-building strategy (do this BEFORE launch posts)
+        content.append(self._generate_karma_strategy())
 
         # Primary launch post
         content.append(self._generate_launch_post())
@@ -50,6 +121,97 @@ class RedditGenerator(BasePlatformGenerator):
         content.append(self._generate_comment_strategy())
 
         return content
+
+    def _generate_karma_strategy(self) -> RedditContent:
+        """
+        Generate karma-building strategy.
+
+        CRITICAL: You need karma before most subreddits will let you post.
+        This strategy should be followed 2-4 weeks before launch.
+        """
+        ctx = self.context
+        subreddits = self._get_target_subreddits()
+
+        body = f"""## Karma-Building Strategy for {ctx.product_name} Launch
+
+**Timeline:** Start 2-4 weeks before planned launch
+
+**Goal:** Build 100+ comment karma and establish presence in target communities
+
+---
+
+### Phase 1: Lurk and Learn (Week 1)
+- Subscribe to: {', '.join(['r/' + s for s in subreddits])}
+- Read top posts from past month in each subreddit
+- Note the tone, style, and what gets upvoted
+- Identify common questions you can answer
+
+### Phase 2: Add Value (Weeks 2-3)
+- Comment on 3-5 posts per day (genuinely helpful comments)
+- Answer questions in your area of expertise
+- Share insights WITHOUT mentioning your product
+- Upvote good content (builds goodwill)
+
+**Comment templates that work:**
+
+1. **Helpful answer:**
+   "I dealt with this exact problem. Here's what worked for me: [specific advice]. Hope that helps!"
+
+2. **Add to discussion:**
+   "Great point. I'd also add that [relevant insight from your experience]."
+
+3. **Ask clarifying question:**
+   "Interesting approach! How did you handle [specific challenge]?"
+
+### Phase 3: Light Engagement (Week 4)
+- Start a few discussion posts (not about your product)
+- Share useful resources you've found
+- Build recognition by being consistently helpful
+
+### Red Flags to Avoid
+❌ Don't mention your product until you have karma
+❌ Don't post links to your site in comments
+❌ Don't use multiple accounts (instant ban)
+❌ Don't ask for upvotes ever
+❌ Don't copy-paste the same comment
+
+### Subreddit-Specific Rules
+
+{self._format_subreddit_rules()}
+
+---
+
+**Remember:** Redditors can smell marketing from a mile away. Be genuine, be helpful, be patient.
+"""
+
+        return RedditContent(
+            content_type="karma_strategy",
+            title="Pre-Launch Karma Building Strategy",
+            body=body.strip(),
+            target_subreddits=[],
+            engagement_rules=[
+                "Start 2-4 weeks before launch",
+                "Comment genuinely on 3-5 posts daily",
+                "Never mention your product while building karma",
+                "Read and follow each subreddit's rules",
+            ],
+        )
+
+    def _format_subreddit_rules(self) -> str:
+        """Format subreddit-specific rules."""
+        lines = []
+        for sub, rules in self.SUBREDDIT_RULES.items():
+            if sub in self._get_target_subreddits():
+                lines.append(f"\n**r/{sub}:**")
+                for rule in rules.get("rules", []):
+                    lines.append(f"  - {rule}")
+                if rules.get("karma_required", 0) > 0:
+                    lines.append(f"  - Karma required: {rules['karma_required']}+")
+                if rules.get("self_promo_allowed") == False:
+                    lines.append(f"  - ⚠️ NO self-promotion allowed")
+                elif rules.get("self_promo_allowed") == "saturday_only":
+                    lines.append(f"  - Self-promo: Saturday threads only")
+        return "\n".join(lines)
 
     def _generate_launch_post(self) -> RedditContent:
         """Generate main launch post."""

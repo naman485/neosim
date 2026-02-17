@@ -6,6 +6,18 @@ Generates:
 - Company page posts
 - Article outlines
 - Connection templates
+
+Platform Best Practices (2024):
+- 3000 character limit, but 1500 is optimal for engagement
+- FIRST 2-3 LINES ARE CRITICAL (before "see more" fold)
+- Line breaks every 1-2 sentences for scannability
+- Personal stories outperform corporate speak 3:1
+- Best days: Tuesday, Wednesday, Thursday
+- Best times: 7-8am local or 5-6pm local (commute times)
+- Engagement prompt at end drives 2x more comments
+- Hashtags: 3-5 max, at the very end
+- Documents/carousels get 3x more reach than text-only
+- Tag relevant people/companies sparingly (not spam)
 """
 
 from typing import List
@@ -14,15 +26,19 @@ from ..distribution import LinkedInContent
 
 
 class LinkedInGenerator(BasePlatformGenerator):
-    """Generate LinkedIn content."""
+    """Generate LinkedIn content following 2024 best practices."""
 
     # LinkedIn limits
     MAX_POST_LENGTH = 3000
-    OPTIMAL_POST_LENGTH = 1500  # For engagement
+    OPTIMAL_POST_LENGTH = 1500  # Sweet spot for engagement
+    HOOK_LENGTH = 140  # Characters before "see more" fold
     MAX_ARTICLE_LENGTH = 120000
 
-    # Optimal posting times
-    OPTIMAL_TIMES = ["8am", "12pm", "5pm"]  # Local time
+    # Optimal posting times (research-backed)
+    OPTIMAL_TIMES = ["7:30am local", "12:00pm local", "5:30pm local"]
+
+    # Best days
+    BEST_DAYS = ["tuesday", "wednesday", "thursday"]
 
     def generate(self) -> List[LinkedInContent]:
         """Generate all LinkedIn content."""
@@ -43,40 +59,66 @@ class LinkedInGenerator(BasePlatformGenerator):
         return content
 
     def _generate_launch_post(self) -> LinkedInContent:
-        """Generate launch announcement post."""
-        ctx = self.context
+        """
+        Generate launch announcement post.
 
-        hook = f"After months of building in secret, I'm thrilled to announce: {ctx.product_name} is live."
+        Hook Strategy: First 2 lines must grab attention before "see more"
+        """
+        ctx = self.context
+        role = ctx.target_roles[0].lower() if ctx.target_roles else "professional"
+        pain = ctx.pain_points[0].lower() if ctx.pain_points else "a frustrating problem"
+
+        # CRITICAL: First ~140 chars appear before "see more"
+        # Hook must create curiosity or resonance
+        hook = f"Every {role} I know has this problem: {pain}."
 
         body = f"""{hook}
 
+I just launched something to fix it.
+
+↓
+
+{ctx.product_name} is now live.
+
 {ctx.unique_value_prop}
 
-Here's what led to this moment:
+Here's the backstory:
 
 {self._format_journey_bullets()}
 
-What {ctx.product_name} does:
+What it actually does:
 
 {self._format_feature_bullets()}
 
 Why I built this:
 
-Every {ctx.target_roles[0].lower() if ctx.target_roles else 'professional'} I talked to struggled with {ctx.pain_points[0].lower() if ctx.pain_points else 'this problem'}. The existing solutions were either too complex, too expensive, or simply didn't work.
+I talked to 50+ {role}s.
 
-{ctx.product_name} is different because {ctx.unique_value_prop.lower()}.
+Same story every time:
+
+"The tools are too complex."
+"The pricing is insane."
+"Nothing actually solves my problem."
+
+So I built {ctx.product_name}.
+
+Simple. Affordable. Actually works.
 
 The road ahead:
 
-This is just v1. We have big plans and would love your input on what to build next.
+This is v1.
 
-Try it free: [LINK]
+I have a roadmap, but I'd rather hear from you.
+
+What would make this more useful?
+
+→ [LINK TO TRY IT FREE]
 
 ---
 
-To everyone who supported this journey - thank you.
+If you're building something too—keep going.
 
-To those starting their own building journey - keep going. The world needs what you're creating.
+The world needs more builders, not more critics.
 
 {self._format_hashtags()}
 """
@@ -85,8 +127,8 @@ To those starting their own building journey - keep going. The world needs what 
             content_type="personal_post",
             text=self.truncate(body, self.MAX_POST_LENGTH),
             hook=hook,
-            hashtags=self.generate_hashtags("linkedin", 5),
-            optimal_time="8am local",
+            hashtags=self.generate_hashtags("linkedin", 4),
+            optimal_time="7:30am local",
             call_to_action="Try it free at [LINK]",
         )
 

@@ -8,6 +8,19 @@ Generates complete Product Hunt launch kit:
 - Topics
 - Media checklist
 - Hunter outreach template
+- Comment response templates
+
+Platform Best Practices (2024):
+- Launch at 12:01 AM PST (not midnight your timezone)
+- Best days: Tuesday, Wednesday, Thursday (avoid Monday/Friday)
+- Tagline: 60 chars MAX, benefit-focused, no buzzwords
+- Description: 260 chars MAX, explain what it does for WHO
+- First comment: Tell your story (why you built it, not just what it does)
+- NEVER ask for upvotes directly (against ToS, can get banned)
+- Respond to EVERY comment within 2 hours
+- Prepare GIF demos (static images underperform 50%)
+- Hunter matters less now, but top hunters still get visibility
+- Gallery images: Show the product in action, not just logos
 """
 
 from .base import BasePlatformGenerator
@@ -15,7 +28,7 @@ from ..distribution import ProductHuntContent
 
 
 class ProductHuntGenerator(BasePlatformGenerator):
-    """Generate Product Hunt launch kit."""
+    """Generate Product Hunt launch kit following 2024 best practices."""
 
     # Product Hunt limits
     MAX_TAGLINE_LENGTH = 60
@@ -31,9 +44,12 @@ class ProductHuntGenerator(BasePlatformGenerator):
         "API": ["Developer Tools", "APIs", "Tech"],
     }
 
+    # Best launch days (avoid Monday, Friday, weekends)
+    BEST_LAUNCH_DAYS = ["tuesday", "wednesday", "thursday"]
+
     def generate(self) -> ProductHuntContent:
-        """Generate complete Product Hunt kit."""
-        return ProductHuntContent(
+        """Generate complete Product Hunt kit with comment templates."""
+        content = ProductHuntContent(
             tagline=self._generate_tagline(),
             description=self._generate_description(),
             first_comment=self._generate_first_comment(),
@@ -42,6 +58,34 @@ class ProductHuntGenerator(BasePlatformGenerator):
             hunter_outreach_template=self._generate_hunter_template(),
             launch_day_prep=self._generate_launch_prep(),
         )
+
+        # Add comment templates as part of launch_day_prep notes
+        # (ProductHuntContent doesn't have a comment_templates field,
+        # so we append guidance to the first comment)
+        comment_guidance = self._generate_comment_guidance()
+        content.first_comment += f"\n\n---\n\n{comment_guidance}"
+
+        return content
+
+    def _generate_comment_guidance(self) -> str:
+        """Generate guidance for responding to comments."""
+        return """**COMMENT RESPONSE GUIDE**
+
+When responding to Product Hunt comments:
+
+✓ Respond to EVERY comment (yes, every single one)
+✓ Respond within 2 hours during launch day
+✓ Be genuine, not salesy
+✓ Thank people specifically (mention something from their comment)
+✓ Answer questions thoroughly
+✓ Take criticism gracefully (thank them, acknowledge, explain)
+
+For feature requests: "Great idea! Added to our roadmap. Can you share more about your use case?"
+
+For comparisons: "Good question! The main difference is [X]. We built this for [specific user]."
+
+For criticism: "Fair point. Here's what we're doing about it: [action]."
+"""
 
     def _generate_tagline(self) -> str:
         """Generate 60-char tagline."""
@@ -212,23 +256,74 @@ Thanks for considering!
 """
 
     def _generate_launch_prep(self) -> list:
-        """Generate launch day preparation checklist."""
+        """Generate launch day preparation checklist with timing."""
         return [
-            "Week before: Notify your email list about upcoming launch",
-            "Week before: Prep all social media posts",
-            "Week before: Coordinate with hunter (if using one)",
-            "Day before: Final check all assets uploaded",
-            "Day before: Test all links",
-            "Day before: Prepare first comment draft",
-            "Launch (12:01am PST): Go live",
-            "Launch +5min: Post maker comment",
-            "Launch +10min: Share on Twitter with thread",
-            "Launch +15min: Post on LinkedIn",
-            "Launch +30min: Share in relevant communities",
-            "Throughout day: Respond to EVERY comment",
-            "Throughout day: Share upvote progress on social",
-            "End of day: Thank everyone who supported",
+            # Week before
+            "T-7 days: Email your list a teaser (don't mention exact date)",
+            "T-7 days: DM 20-30 supporters asking them to check PH on launch day",
+            "T-5 days: Prep all social media posts (Twitter thread, LinkedIn)",
+            "T-5 days: Create GIF demos (3-5 seconds each, show key features)",
+            "T-3 days: Coordinate with hunter if using one (share all assets)",
+            "T-3 days: Write first comment draft, get feedback from 2-3 people",
+
+            # Day before
+            "T-1 day: Upload all assets to PH (don't publish yet)",
+            "T-1 day: Test EVERY link (signup, docs, pricing, social)",
+            "T-1 day: Clear your schedule for launch day",
+            "T-1 day: Set 3 alarms: 11:45pm PST, 12:00am PST, 12:05am PST",
+
+            # Launch sequence (12:01am PST is the golden minute)
+            "12:01am PST: Publish on Product Hunt",
+            "12:05am PST: Post your maker comment immediately",
+            "12:10am PST: Post Twitter launch thread",
+            "12:15am PST: Post LinkedIn announcement",
+            "12:30am PST: Share in relevant Slack/Discord communities",
+
+            # Throughout the day (CRITICAL)
+            "Every 30min: Check for new comments and respond",
+            "Every 2hrs: Share progress update on Twitter (not upvote counts!)",
+            "Afternoon: Share behind-the-scenes content",
+
+            # IMPORTANT: What NOT to do
+            "⚠️ NEVER ask for upvotes directly (against ToS)",
+            "⚠️ NEVER share direct upvote links (against ToS)",
+            "⚠️ DO share: 'We're live on Product Hunt, would love your feedback'",
+
+            # End of day
+            "End of day: Thank everyone who commented/supported",
+            "Next day: Follow up with everyone who showed interest",
         ]
+
+    def _generate_comment_templates(self) -> dict:
+        """Generate templates for responding to PH comments."""
+        ctx = self.context
+
+        return {
+            "thank_you_positive": [
+                f"Thank you so much! Really appreciate you checking out {ctx.product_name}. Let me know if you have any questions as you explore!",
+                f"This means a lot! Would love to hear what you think after trying it out.",
+                f"Thanks for the support! If you run into any issues, just reply here—I'm monitoring all day.",
+            ],
+            "feature_request": [
+                f"Great suggestion! I've added this to our roadmap. Would you mind sharing a bit more about your use case? It'll help us prioritize.",
+                f"Love this idea. We actually have something similar planned for v2. I'll keep you posted when it's ready!",
+                f"Thanks for the feedback! Can you tell me more about how you'd use this? I want to make sure we build it right.",
+            ],
+            "question_about_product": [
+                f"Great question! [ANSWER]. Does that help? Happy to clarify further.",
+                f"Thanks for asking! [ANSWER]. Let me know if you'd like me to walk you through it.",
+            ],
+            "comparison_to_competitor": [
+                f"Good question! The main difference is [SPECIFIC DIFFERENTIATOR]. We built {ctx.product_name} specifically for [TARGET USER], while [COMPETITOR] is more focused on [THEIR FOCUS]. Happy to dive deeper if helpful!",
+            ],
+            "pricing_question": [
+                f"Great question! {self._get_pricing_statement()}. We wanted to make it accessible for [TARGET]. Let me know if you have specific questions about what's included!",
+            ],
+            "criticism": [
+                f"Appreciate the honest feedback! You make a fair point about [ISSUE]. We're actually working on improving this. Would love to hear more specifics if you have them.",
+                f"Thanks for sharing this. You're right that [ACKNOWLEDGE]. Here's what we're doing about it: [ACTION]. Would love your input on the solution.",
+            ],
+        }
 
     def _format_features(self) -> str:
         """Format features for first comment."""
