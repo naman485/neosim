@@ -195,6 +195,7 @@ Respond with a JSON object:
 def create_competitor_agents(
     competitors: List[Dict[str, Any]],
     provider: LLMProvider = LLMProvider.ANTHROPIC,
+    model: str = None,
 ) -> List[CompetitorAgent]:
     """
     Create competitor agents from config.
@@ -202,6 +203,7 @@ def create_competitor_agents(
     Args:
         competitors: List of competitor configs from NeoSimConfig
         provider: LLM provider to use
+        model: LLM model to use (defaults to provider's default)
 
     Returns:
         List of CompetitorAgent instances
@@ -219,6 +221,6 @@ def create_competitor_agents(
         )
 
         agent_id = f"competitor_{i}"
-        agents.append(CompetitorAgent(agent_id, profile, provider))
+        agents.append(CompetitorAgent(agent_id, profile, provider, model))
 
     return agents

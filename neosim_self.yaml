@@ -1,0 +1,179 @@
+version: "1.0"
+project_name: "NeoSim"
+created_at: "2026-02-17"
+
+# LLM Configuration - Choose your provider and model
+# Supported providers: anthropic, openai, google, groq, together, ollama
+# Set the corresponding API key as environment variable:
+#   - anthropic: ANTHROPIC_API_KEY
+#   - openai: OPENAI_API_KEY
+#   - google: GOOGLE_API_KEY
+#   - groq: GROQ_API_KEY
+#   - together: TOGETHER_API_KEY
+#   - ollama: No API key needed (runs locally, set OLLAMA_HOST if not localhost:11434)
+llm_provider: "anthropic"
+llm_model: "claude-sonnet-4-20250514"
+# Alternative models per provider:
+#   anthropic: claude-sonnet-4-20250514, claude-opus-4-20250514, claude-haiku-3-5-20241022
+#   openai: gpt-4o, gpt-4o-mini, gpt-4-turbo
+#   google: gemini-1.5-pro, gemini-1.5-flash
+#   groq: llama-3.3-70b-versatile, mixtral-8x7b-32768
+#   together: meta-llama/Llama-3.3-70B-Instruct-Turbo, mistralai/Mixtral-8x7B-Instruct-v0.1
+#   ollama: llama3.2, mistral, codellama (any model you have pulled)
+
+product:
+  name: "NeoSim"
+  description: "The staging environment for go-to-market - simulate your launch before you launch"
+  category: "DevTool"
+  stage: "launched"
+  unique_value_prop: "Test your GTM strategy with AI agents before spending real money"
+  key_features:
+    - "Simulate buyer behavior with AI personas"
+    - "Predict CAC, conversion rates, and LTV"
+    - "Identify objections before they happen"
+    - "Generate launch content for Twitter, Reddit, LinkedIn, Product Hunt"
+    - "30-day content calendar with optimal timing"
+    - "Landing page quality analysis"
+  tech_stack:
+    - "Python"
+    - "Claude API"
+    - "Async execution"
+
+icp_personas:
+  - name: "Solo Founder"
+    role: "Founder"
+    company_size: "solo"
+    pain_points:
+      - "Wasting money on channels that don't convert"
+      - "No idea if messaging will resonate"
+      - "Launch anxiety - what if nobody cares?"
+      - "Writing launch content is exhausting"
+    goals:
+      - "Validate GTM before spending budget"
+      - "Know which channels to prioritize"
+      - "Launch with confidence"
+      - "Get ready-to-post content"
+    objection_tendencies:
+      - "How accurate are AI simulations really?"
+      - "I can just launch and see what happens"
+    budget_range: "$0-50/mo"
+    decision_speed: "fast"
+
+  - name: "Indie Hacker"
+    role: "Builder"
+    company_size: "solo"
+    pain_points:
+      - "Building in public but no strategy"
+      - "Guessing which features to highlight"
+      - "Don't know my ICP well enough"
+      - "Overwhelmed by launch tasks"
+    goals:
+      - "Understand buyer objections"
+      - "Prioritize marketing efforts"
+      - "Ship faster with less anxiety"
+    budget_range: "$0-100/mo"
+    decision_speed: "fast"
+
+  - name: "Early-Stage Startup"
+    role: "Head of Growth"
+    company_size: "startup"
+    pain_points:
+      - "Limited budget, can't afford to guess"
+      - "Board wants projections but we have no data"
+      - "Need to justify channel spend"
+      - "Competitors are moving faster"
+    goals:
+      - "Data-driven GTM decisions"
+      - "Forecast metrics for investors"
+      - "Reduce CAC through better targeting"
+    budget_range: "$100-500/mo"
+    decision_speed: "medium"
+
+pricing:
+  model: "lifetime"
+  tiers:
+    - name: "Free"
+      price: 0
+      billing: "forever"
+      features:
+        - "5 simulations/month"
+        - "Basic metrics"
+        - "Community support"
+    - name: "Lifetime"
+      price: 99
+      billing: "once"
+      features:
+        - "Unlimited simulations forever"
+        - "Distribution kit generation"
+        - "Landing page analysis"
+        - "Priority support"
+        - "All future updates included"
+    - name: "Team Lifetime"
+      price: 249
+      billing: "once"
+      features:
+        - "Everything in Lifetime"
+        - "5 team seats"
+        - "Multiple projects"
+        - "Custom ICP personas"
+        - "Priority support"
+  trial_days: 0
+
+channels:
+  - name: "organic-social"
+    priority: 5
+    existing_presence: "growing"
+    strategy_notes: "Twitter/X indie hacker community, build in public"
+  - name: "community"
+    priority: 5
+    existing_presence: "moderate"
+    strategy_notes: "Indie Hackers, r/startups, r/SaaS, HN"
+  - name: "product-led"
+    priority: 4
+    strategy_notes: "Free tier drives adoption, upgrade for distribution kit"
+  - name: "content"
+    priority: 3
+    strategy_notes: "Case studies of successful launches using NeoSim"
+
+competitors:
+  - name: "Manual research"
+    positioning: "Do it yourself with spreadsheets and surveys"
+    pricing: "Free but time-consuming"
+    strengths:
+      - "No cost"
+      - "Full control"
+    weaknesses:
+      - "Takes weeks"
+      - "Biased data"
+      - "No simulation"
+    market_share: "dominant"
+  - name: "User interviews"
+    positioning: "Talk to real users"
+    pricing: "$50-200/interview"
+    strengths:
+      - "Real human feedback"
+      - "Deep insights"
+    weaknesses:
+      - "Expensive at scale"
+      - "Time-consuming"
+      - "Small sample size"
+    market_share: "moderate"
+  - name: "Launch and pray"
+    positioning: "Just ship it and see"
+    pricing: "Free upfront, expensive mistakes"
+    strengths:
+      - "Fast"
+      - "Real data"
+    weaknesses:
+      - "Wastes budget"
+      - "Damages brand if wrong"
+      - "No second chances"
+    market_share: "significant"
+
+simulation:
+  cycles: 15
+  buyer_agents: 15
+  competitor_agents: 3
+  channel_agents: 4
+  cycle_unit: "week"
+  randomness: 0.2

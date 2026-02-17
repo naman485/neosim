@@ -18,6 +18,19 @@ from enum import Enum
 class LLMProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    GOOGLE = "google"
+    GROQ = "groq"
+    TOGETHER = "together"
+    OLLAMA = "ollama"
+
+    @classmethod
+    def from_string(cls, value: str) -> "LLMProvider":
+        """Convert string to LLMProvider enum."""
+        value = value.lower()
+        for provider in cls:
+            if provider.value == value:
+                return provider
+        raise ValueError(f"Unknown LLM provider: {value}. Supported: {[p.value for p in cls]}")
 
 
 @dataclass
@@ -90,19 +103,36 @@ class BaseAgent(ABC):
         self._client = httpx.Client(timeout=30.0)
         self._async_client = None  # Lazy init for async
 
+    # Default models per provider
+    DEFAULT_MODELS = {
+        LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+        LLMProvider.OPENAI: "gpt-4o",
+        LLMProvider.GOOGLE: "gemini-1.5-pro",
+        LLMProvider.GROQ: "llama-3.3-70b-versatile",
+        LLMProvider.TOGETHER: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        LLMProvider.OLLAMA: "llama3.2",
+    }
+
+    # Environment variable names for API keys
+    API_KEY_ENV_VARS = {
+        LLMProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+        LLMProvider.OPENAI: "OPENAI_API_KEY",
+        LLMProvider.GOOGLE: "GOOGLE_API_KEY",
+        LLMProvider.GROQ: "GROQ_API_KEY",
+        LLMProvider.TOGETHER: "TOGETHER_API_KEY",
+        LLMProvider.OLLAMA: None,  # Ollama runs locally, no API key needed
+    }
+
     def _default_model(self) -> str:
         """Get default model for provider."""
-        if self.provider == LLMProvider.ANTHROPIC:
-            return "claude-sonnet-4-20250514"
-        return "gpt-4o"
+        return self.DEFAULT_MODELS.get(self.provider, "gpt-4o")
 
     def _get_api_key(self) -> str:
         """Get API key from environment."""
-        if self.provider == LLMProvider.ANTHROPIC:
-            key = os.environ.get("ANTHROPIC_API_KEY", "")
-        else:
-            key = os.environ.get("OPENAI_API_KEY", "")
-        return key
+        env_var = self.API_KEY_ENV_VARS.get(self.provider)
+        if env_var is None:
+            return ""  # Ollama doesn't need API key
+        return os.environ.get(env_var, "")
 
     @property
     @abstractmethod
@@ -211,12 +241,22 @@ class BaseAgent(ABC):
         Returns:
             LLM response text
         """
-        if not self._api_key:
-            # Return mock response for testing without API key
+        # Ollama doesn't need API key
+        if self.provider != LLMProvider.OLLAMA and not self._api_key:
             return self._mock_response()
 
         if self.provider == LLMProvider.ANTHROPIC:
             return self._call_anthropic(system_prompt, user_prompt)
+        elif self.provider == LLMProvider.OPENAI:
+            return self._call_openai(system_prompt, user_prompt)
+        elif self.provider == LLMProvider.GOOGLE:
+            return self._call_google(system_prompt, user_prompt)
+        elif self.provider == LLMProvider.GROQ:
+            return self._call_groq(system_prompt, user_prompt)
+        elif self.provider == LLMProvider.TOGETHER:
+            return self._call_together(system_prompt, user_prompt)
+        elif self.provider == LLMProvider.OLLAMA:
+            return self._call_ollama(system_prompt, user_prompt)
         else:
             return self._call_openai(system_prompt, user_prompt)
 
@@ -263,6 +303,87 @@ class BaseAgent(ABC):
         data = response.json()
         return data["choices"][0]["message"]["content"]
 
+    def _call_google(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Google Gemini API."""
+        response = self._client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
+            headers={"Content-Type": "application/json"},
+            params={"key": self._api_key},
+            json={
+                "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                "generationConfig": {
+                    "temperature": self.temperature,
+                    "maxOutputTokens": 1024,
+                },
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    def _call_groq(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Groq API (OpenAI-compatible)."""
+        response = self._client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    def _call_together(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Together AI API (OpenAI-compatible)."""
+        response = self._client.post(
+            "https://api.together.xyz/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
+        """Call local Ollama API."""
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        response = self._client.post(
+            f"{ollama_host}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "stream": False,
+                "options": {"temperature": self.temperature},
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["message"]["content"]
+
     def _mock_response(self) -> str:
         """Return mock response for testing without API."""
         return json.dumps({
@@ -275,13 +396,24 @@ class BaseAgent(ABC):
 
     async def _call_llm_async(self, system_prompt: str, user_prompt: str) -> str:
         """Async LLM API call for parallel execution."""
-        if not self._api_key:
+        # Ollama doesn't need API key
+        if self.provider != LLMProvider.OLLAMA and not self._api_key:
             return self._mock_response()
 
         # Create a fresh client for each call to avoid connection issues in parallel
         async with httpx.AsyncClient(timeout=60.0) as client:
             if self.provider == LLMProvider.ANTHROPIC:
                 return await self._call_anthropic_async(system_prompt, user_prompt, client)
+            elif self.provider == LLMProvider.OPENAI:
+                return await self._call_openai_async(system_prompt, user_prompt, client)
+            elif self.provider == LLMProvider.GOOGLE:
+                return await self._call_google_async(system_prompt, user_prompt, client)
+            elif self.provider == LLMProvider.GROQ:
+                return await self._call_groq_async(system_prompt, user_prompt, client)
+            elif self.provider == LLMProvider.TOGETHER:
+                return await self._call_together_async(system_prompt, user_prompt, client)
+            elif self.provider == LLMProvider.OLLAMA:
+                return await self._call_ollama_async(system_prompt, user_prompt, client)
             else:
                 return await self._call_openai_async(system_prompt, user_prompt, client)
 
@@ -327,6 +459,87 @@ class BaseAgent(ABC):
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
+
+    async def _call_google_async(self, system_prompt: str, user_prompt: str, client: httpx.AsyncClient) -> str:
+        """Async Google Gemini API call."""
+        response = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
+            headers={"Content-Type": "application/json"},
+            params={"key": self._api_key},
+            json={
+                "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                "generationConfig": {
+                    "temperature": self.temperature,
+                    "maxOutputTokens": 1024,
+                },
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    async def _call_groq_async(self, system_prompt: str, user_prompt: str, client: httpx.AsyncClient) -> str:
+        """Async Groq API call (OpenAI-compatible)."""
+        response = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    async def _call_together_async(self, system_prompt: str, user_prompt: str, client: httpx.AsyncClient) -> str:
+        """Async Together AI API call (OpenAI-compatible)."""
+        response = await client.post(
+            "https://api.together.xyz/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    async def _call_ollama_async(self, system_prompt: str, user_prompt: str, client: httpx.AsyncClient) -> str:
+        """Async local Ollama API call."""
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        response = await client.post(
+            f"{ollama_host}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "stream": False,
+                "options": {"temperature": self.temperature},
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["message"]["content"]
 
     def reset(self) -> None:
         """Reset agent state for new simulation."""

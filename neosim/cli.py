@@ -87,7 +87,13 @@ def init(
     console.print(f"\n[green]Config saved to {output}[/green]")
     console.print("\nNext steps:")
     console.print("  1. Review and customize neosim.yaml")
-    console.print("  2. Set your API key: export ANTHROPIC_API_KEY=...")
+    console.print("  2. Set your API key based on llm_provider in config:")
+    console.print("     [dim]anthropic:[/dim] export ANTHROPIC_API_KEY=...")
+    console.print("     [dim]openai:[/dim] export OPENAI_API_KEY=...")
+    console.print("     [dim]google:[/dim] export GOOGLE_API_KEY=...")
+    console.print("     [dim]groq:[/dim] export GROQ_API_KEY=...")
+    console.print("     [dim]together:[/dim] export TOGETHER_API_KEY=...")
+    console.print("     [dim]ollama:[/dim] (no key needed - runs locally)")
     console.print("  3. Run simulation: [bold]neosim sim[/bold]")
 
 
@@ -179,11 +185,33 @@ def _interactive_init() -> NeoSimConfig:
             market_share="significant",
         ))
 
+    # LLM Configuration
+    console.print("\n[bold]LLM Configuration[/bold]")
+    llm_provider = Prompt.ask(
+        "LLM provider",
+        choices=["anthropic", "openai", "google", "groq", "together", "ollama"],
+        default="anthropic",
+    )
+
+    # Suggest default model based on provider
+    default_models = {
+        "anthropic": "claude-sonnet-4-20250514",
+        "openai": "gpt-4o",
+        "google": "gemini-1.5-pro",
+        "groq": "llama-3.3-70b-versatile",
+        "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "ollama": "llama3.2",
+    }
+    default_model = default_models.get(llm_provider, "gpt-4o")
+    llm_model = Prompt.ask("Model name", default=default_model)
+
     # Build config
     config = NeoSimConfig(
         version="1.0",
         project_name=product_name,
         created_at=datetime.now().isoformat(),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
         product=product,
         icp_personas=[icp],
         pricing=pricing,
@@ -284,11 +312,7 @@ def sim(
     Use --url to analyze your landing page and adjust conversion predictions
     based on execution quality (not just positioning).
     """
-    # Check API key
-    if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
-        console.print("[red]Error: No API key found.[/red]")
-        console.print("Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.")
-        raise typer.Exit(1)
+    # Check API key (deferred until we know the provider from config)
 
     # Load config
     try:
@@ -340,10 +364,31 @@ def sim(
         subtitle=f"{config.simulation.cycles} cycles | {config.simulation.buyer_agents} buyers",
     ))
 
-    # Determine provider
-    provider = LLMProvider.ANTHROPIC
-    if os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
-        provider = LLMProvider.OPENAI
+    # Determine provider from config
+    try:
+        provider = LLMProvider.from_string(config.llm_provider)
+    except ValueError:
+        console.print(f"[red]Error: Unknown LLM provider: {config.llm_provider}[/red]")
+        console.print("Supported providers: anthropic, openai, google, groq, together, ollama")
+        raise typer.Exit(1)
+
+    # Check for required API key (except for Ollama which runs locally)
+    api_key_env_vars = {
+        LLMProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+        LLMProvider.OPENAI: "OPENAI_API_KEY",
+        LLMProvider.GOOGLE: "GOOGLE_API_KEY",
+        LLMProvider.GROQ: "GROQ_API_KEY",
+        LLMProvider.TOGETHER: "TOGETHER_API_KEY",
+        LLMProvider.OLLAMA: None,  # No API key needed
+    }
+    env_var = api_key_env_vars.get(provider)
+    if env_var and not os.environ.get(env_var):
+        console.print(f"[red]Error: {env_var} not set.[/red]")
+        console.print(f"Your config uses [bold]{provider.value}[/bold] provider.")
+        console.print(f"Set the environment variable: export {env_var}=...")
+        console.print("\nOr change llm_provider in your config to use a different provider:")
+        console.print("  anthropic, openai, google, groq, together, ollama")
+        raise typer.Exit(1)
 
     # Create progress display
     cycle_metrics = []
@@ -372,7 +417,6 @@ def sim(
 
         simulation = Simulation(
             config,
-            provider=provider,
             on_cycle_complete=progress_callback,
             execution_quality=execution_quality,
         )
@@ -607,17 +651,13 @@ def compare(
     cfg_a.simulation.cycles = cycles
     cfg_b.simulation.cycles = cycles
 
-    provider = LLMProvider.ANTHROPIC
-    if os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
-        provider = LLMProvider.OPENAI
-
-    # Run both simulations
+    # Run both simulations (provider is read from config)
     console.print("\n[bold]Running Strategy A...[/bold]")
-    sim_a = Simulation(cfg_a, provider=provider)
+    sim_a = Simulation(cfg_a)
     result_a = sim_a.run()
 
     console.print("\n[bold]Running Strategy B...[/bold]")
-    sim_b = Simulation(cfg_b, provider=provider)
+    sim_b = Simulation(cfg_b)
     result_b = sim_b.run()
 
     # Compare results

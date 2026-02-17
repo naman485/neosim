@@ -248,6 +248,7 @@ Respond with a JSON object:
 def create_channel_agents(
     channels: List[Dict[str, Any]],
     provider: LLMProvider = LLMProvider.ANTHROPIC,
+    model: str = None,
 ) -> List[ChannelAgent]:
     """
     Create channel agents from config.
@@ -255,6 +256,7 @@ def create_channel_agents(
     Args:
         channels: List of channel configs from NeoSimConfig
         provider: LLM provider to use
+        model: LLM model to use (defaults to provider's default)
 
     Returns:
         List of ChannelAgent instances
@@ -271,6 +273,6 @@ def create_channel_agents(
         )
 
         agent_id = f"channel_{i}"
-        agents.append(ChannelAgent(agent_id, profile, provider))
+        agents.append(ChannelAgent(agent_id, profile, provider, model))
 
     return agents

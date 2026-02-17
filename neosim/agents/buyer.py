@@ -182,6 +182,7 @@ def create_buyer_agents(
     personas: List[Dict[str, Any]],
     count_per_persona: int = 5,
     provider: LLMProvider = LLMProvider.ANTHROPIC,
+    model: str = None,
 ) -> List[BuyerAgent]:
     """
     Create multiple buyer agents from persona definitions.
@@ -190,6 +191,7 @@ def create_buyer_agents(
         personas: List of persona configs from NeoSimConfig
         count_per_persona: How many agents per persona type
         provider: LLM provider to use
+        model: LLM model to use (defaults to provider's default)
 
     Returns:
         List of BuyerAgent instances
@@ -211,7 +213,7 @@ def create_buyer_agents(
 
         for i in range(count_per_persona):
             agent_id = f"buyer_{agent_num}"
-            agents.append(BuyerAgent(agent_id, persona, provider))
+            agents.append(BuyerAgent(agent_id, persona, provider, model))
             agent_num += 1
 
     return agents

@@ -15,8 +15,13 @@ pip install neosim
 # Or install from source
 pip install -e .
 
-# Set your API key
-export ANTHROPIC_API_KEY=sk-ant-...
+# Set your API key (choose one based on your provider)
+export ANTHROPIC_API_KEY=sk-ant-...  # Claude
+# OR
+export OPENAI_API_KEY=sk-...         # GPT-4
+# OR
+export GROQ_API_KEY=gsk_...          # Groq (fast inference)
+# OR run locally with Ollama (no key needed)
 
 # Initialize project
 neosim init
@@ -60,6 +65,10 @@ NeoSim is configured via `neosim.yaml`:
 ```yaml
 version: "1.0"
 project_name: "My Startup"
+
+# LLM Configuration - choose your provider
+llm_provider: "anthropic"  # anthropic, openai, google, groq, together, ollama
+llm_model: "claude-sonnet-4-20250514"
 
 product:
   name: "AwesomeApp"
@@ -237,14 +246,33 @@ neosim distribute results.json --enhance
 5. Schedule & launch    → Use your favorite tools
 ```
 
-## API Keys
+## LLM Providers
 
-NeoSim uses LLM APIs for agent reasoning. Set one of:
+NeoSim is **LLM-agnostic** - choose the provider that fits your needs:
+
+| Provider | Env Variable | Default Model | Notes |
+|----------|--------------|---------------|-------|
+| `anthropic` | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514 | Recommended for quality |
+| `openai` | `OPENAI_API_KEY` | gpt-4o | GPT-4 family |
+| `google` | `GOOGLE_API_KEY` | gemini-1.5-pro | Gemini models |
+| `groq` | `GROQ_API_KEY` | llama-3.3-70b-versatile | Fast inference |
+| `together` | `TOGETHER_API_KEY` | Llama-3.3-70B-Instruct | Open models |
+| `ollama` | *(none - local)* | llama3.2 | Run locally, free |
+
+Set your provider in `neosim.yaml`:
+
+```yaml
+llm_provider: "groq"  # Fast and cheap
+llm_model: "llama-3.3-70b-versatile"
+```
+
+Then set the corresponding API key:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # Claude (recommended)
-export OPENAI_API_KEY=sk-...          # GPT-4 fallback
+export GROQ_API_KEY=gsk_...
 ```
+
+For Ollama (local), just ensure Ollama is running - no API key needed.
 
 ## Development
 
@@ -280,6 +308,14 @@ ruff check neosim/
   - [x] 30-day content calendar
   - [x] Launch day playbook
   - [x] LLM content enhancement (`--enhance` flag)
+- [x] **Multi-LLM Support** - Provider agnostic
+  - [x] Anthropic (Claude)
+  - [x] OpenAI (GPT-4)
+  - [x] Google (Gemini)
+  - [x] Groq (fast inference)
+  - [x] Together AI (open models)
+  - [x] Ollama (local/free)
+- [x] Lifetime pricing model
 - [ ] CreateOS integration
 - [ ] Beta launch
 

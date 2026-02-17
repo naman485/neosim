@@ -66,7 +66,7 @@ class Simulation:
     def __init__(
         self,
         config: NeoSimConfig,
-        provider: LLMProvider = LLMProvider.ANTHROPIC,
+        provider: LLMProvider = None,
         on_cycle_complete: Optional[Callable[[int, CycleResult], None]] = None,
         execution_quality=None,
     ):
@@ -75,12 +75,17 @@ class Simulation:
 
         Args:
             config: NeoSim configuration
-            provider: LLM provider to use
+            provider: LLM provider to use (defaults to config.llm_provider)
             on_cycle_complete: Callback after each cycle (for progress reporting)
             execution_quality: Optional ExecutionQualityScore from web analysis
         """
         self.config = config
-        self.provider = provider
+        # Use provider from config if not explicitly passed
+        if provider is None:
+            self.provider = LLMProvider.from_string(config.llm_provider)
+        else:
+            self.provider = provider
+        self.model = config.llm_model
         self.on_cycle_complete = on_cycle_complete
         self.execution_quality = execution_quality
 
@@ -139,19 +144,22 @@ class Simulation:
             icp_dicts or [{"name": "Default Buyer", "role": "Decision Maker"}],
             count_per_persona=agents_per_persona,
             provider=self.provider,
+            model=self.model,
         )
 
         self.competitor_agents = create_competitor_agents(
             competitor_dicts or [{"name": "Generic Competitor"}],
             provider=self.provider,
+            model=self.model,
         )
 
         self.channel_agents = create_channel_agents(
             channel_dicts or [{"name": "organic-social"}],
             provider=self.provider,
+            model=self.model,
         )
 
-        self.advisor_agent = AdvisorAgent(provider=self.provider)
+        self.advisor_agent = AdvisorAgent(provider=self.provider, model=self.model)
 
     def run(self) -> SimulationResult:
         """
