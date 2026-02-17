@@ -29,6 +29,8 @@ neosim.yaml
 results/
 *.json
 !pyproject.toml
+*_calendar.csv
+createos.yaml
 
 # Testing
 .pytest_cache/
