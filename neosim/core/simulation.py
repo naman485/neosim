@@ -292,7 +292,17 @@ class Simulation:
 
     def _run_cycle(self, cycle_num: int, base_context: Dict[str, Any]) -> CycleResult:
         """Run a single simulation cycle with parallel agent execution."""
-        return asyncio.run(self._run_cycle_async(cycle_num, base_context))
+        try:
+            # Check if we're already in an event loop (e.g., FastAPI)
+            loop = asyncio.get_running_loop()
+            # We're in an async context - create a new thread to run the coroutine
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._run_cycle_async(cycle_num, base_context))
+                return future.result()
+        except RuntimeError:
+            # No running event loop - safe to use asyncio.run()
+            return asyncio.run(self._run_cycle_async(cycle_num, base_context))
 
     async def _run_cycle_async(self, cycle_num: int, base_context: Dict[str, Any]) -> CycleResult:
         """Async cycle execution - runs agents in parallel with rate limiting."""
