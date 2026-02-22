@@ -214,6 +214,9 @@ class ChannelInput(BaseModel):
 class CompetitorInput(BaseModel):
     name: str
     positioning: str = ""
+    pricing: str = "unknown"
+    strengths: List[str] = []
+    weaknesses: List[str] = []
     market_share: str = "unknown"
 
 class SimulationRequest(BaseModel):
@@ -347,6 +350,9 @@ def request_to_config(req: SimulationRequest) -> NeoSimConfig:
         CompetitorConfig(
             name=c.name,
             positioning=c.positioning,
+            pricing=c.pricing,
+            strengths=c.strengths,
+            weaknesses=c.weaknesses,
             market_share=c.market_share,
         )
         for c in req.competitors
